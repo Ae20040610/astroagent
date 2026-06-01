@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --night-950: #030309;
+  --night-900: #070714;
+  --night-800: #0e0e28;
+  --night-700: #16163e;
+  --gold-400: #f4b942;
+  --gold-300: #fcd34d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--night-950);
+  color: #e0e0ff;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+#root {
+  height: 100%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 160, 23, 0.3);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 160, 23, 0.6);
+}
+
+/* Stars background */
+.stars-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.star {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  animation: twinkle var(--duration, 3s) ease-in-out var(--delay, 0s) infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 0.9; transform: scale(1.2); }
+}
+
+/* Shimmer text */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #fcd34d 0%,
+    #f4b942 25%,
+    #fff9e0 50%,
+    #f4b942 75%,
+    #fcd34d 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Tool activity pill */
+.tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid rgba(212, 160, 23, 0.25);
+  background: rgba(212, 160, 23, 0.08);
+  color: #fcd34d;
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Glow effects */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(212, 160, 23, 0.15), 0 0 40px rgba(212, 160, 23, 0.05);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(96, 60, 170, 0.2), 0 0 60px rgba(96, 60, 170, 0.08);
+}
+
+/* Prose in chat */
+.chat-prose p { margin: 0.5em 0; line-height: 1.7; }
+.chat-prose strong { color: #fcd34d; font-weight: 600; }
+.chat-prose em { color: #c0c0ee; }
+.chat-prose ul { padding-left: 1.2em; margin: 0.5em 0; }
+.chat-prose li { margin: 0.25em 0; }
+
+/* Cursor blink for streaming */
+.cursor-blink::after {
+  content: '|';
+  animation: blink 1s step-end infinite;
+  color: #f4b942;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
