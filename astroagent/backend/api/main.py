@@ -148,6 +148,9 @@ async def chat_stream(request: ChatRequest):
 
             final_content = ""
             tool_calls_seen = []
+            INTENT_LABELS = ["chart_request", "daily_horoscope", "free_question", "off_topic", "sensitive"]
+            stream_buffer = ""
+            buffer_flushed = False
 
             # Stream graph execution
             async for event in astro_graph.astream_events(state, version="v2"):
@@ -180,9 +183,37 @@ async def chat_stream(request: ChatRequest):
                     if chunk and hasattr(chunk, "content") and chunk.content:
                         token = chunk.content
                         if isinstance(token, str):
-                            final_content += token
-                            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-                            await asyncio.sleep(0)
+                            if not buffer_flushed:
+                                # Buffer until we have enough to detect a label
+                                stream_buffer += token
+                                if len(stream_buffer) >= 30 or "\n" in stream_buffer:
+                                    # Strip any leading intent label
+                                    clean = stream_buffer.strip()
+                                    for label in INTENT_LABELS:
+                                        if clean.lower().startswith(label):
+                                            clean = clean[len(label):].lstrip("\n\r :–-_")
+                                            break
+                                    stream_buffer = clean
+                                    buffer_flushed = True
+                                    if stream_buffer:
+                                        final_content += stream_buffer
+                                        yield f"data: {json.dumps({'type': 'token', 'content': stream_buffer})}\n\n"
+                                        await asyncio.sleep(0)
+                            else:
+                                final_content += token
+                                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                                await asyncio.sleep(0)
+
+            # Flush any remaining buffer
+            if not buffer_flushed and stream_buffer:
+                clean = stream_buffer.strip()
+                for label in INTENT_LABELS:
+                    if clean.lower().startswith(label):
+                        clean = clean[len(label):].lstrip("\n\r :–-_")
+                        break
+                if clean:
+                    final_content += clean
+                    yield f"data: {json.dumps({'type': 'token', 'content': clean})}\n\n"
 
             # Save assistant message
             if final_content:

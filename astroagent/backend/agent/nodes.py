@@ -8,6 +8,8 @@ load_dotenv()
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from agent.state import AstroState
 from agent.tools import geocode_place, compute_birth_chart, get_daily_transits, knowledge_lookup
 import os
@@ -15,17 +17,32 @@ import json
 
 # ── LLM setup ─────────────────────────────────────────────────────────────────
 def get_llm(with_tools=False):
-    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
-    if provider == "openai":
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+
+    if provider == "groq":
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.8,
+            groq_api_key=os.getenv("GROQ_API_KEY"),
+            max_tokens=1500,
+        )
+    elif provider == "gemini":
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0.8,
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            max_output_tokens=1500,
+        )
+    elif provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
         llm = ChatOpenAI(
-            model=os.getenv("OPENAI_MODEL", "openai/gpt-4o"),
+            model=os.getenv("OPENAI_MODEL", "openai/gpt-4o-mini"),
             temperature=0.8,
             streaming=True,
             api_key=api_key,
             base_url=base_url if base_url else None,
-            max_tokens=2048,
+            max_tokens=1500,
         )
     else:
         llm = ChatAnthropic(
@@ -33,7 +50,7 @@ def get_llm(with_tools=False):
             temperature=0.8,
             streaming=True,
             api_key=os.getenv("ANTHROPIC_API_KEY"),
-            max_tokens=2048,
+            max_tokens=1500,
         )
 
     if with_tools:
@@ -99,7 +116,7 @@ What would you like to explore in the stars today?"""
 # ── Nodes ─────────────────────────────────────────────────────────────────────
 
 def router_node(state: AstroState) -> AstroState:
-    """Classify the user's intent."""
+    """Classify the user's intent using keyword matching — no LLM call needed."""
     messages = state.get("messages", [])
     if not messages:
         return {**state, "intent": "free_question"}
@@ -108,27 +125,31 @@ def router_node(state: AstroState) -> AstroState:
     if not last_human:
         return {**state, "intent": "free_question"}
 
-    # Build context: last few messages so the router understands follow-ups
-    recent = messages[-6:] if len(messages) > 6 else messages
-    context_text = ""
-    for m in recent:
-        if isinstance(m, HumanMessage):
-            context_text += f"User: {m.content}\n"
-        elif isinstance(m, AIMessage) and m.content:
-            context_text += f"Assistant: {str(m.content)[:200]}\n"
+    text = last_human.content.lower().strip()
 
-    llm = get_llm(with_tools=False)
-    response = llm.invoke([
-        SystemMessage(content=ROUTER_PROMPT),
-        HumanMessage(content=f"Conversation so far:\n{context_text}\nClassify the latest user message.")
-    ])
-    intent = response.content.strip().lower().replace("-", "_").split()[0]  # take first word only
+    # Sensitive topics
+    sensitive_keywords = ["diagnose", "medical advice", "legal advice", "invest my money", "should i buy stocks"]
+    if any(k in text for k in sensitive_keywords):
+        return {**state, "intent": "sensitive", "step_count": state.get("step_count", 0)}
 
-    valid_intents = ["chart_request", "daily_horoscope", "free_question", "off_topic", "sensitive"]
-    if intent not in valid_intents:
-        intent = "free_question"
+    # Clearly off-topic (only hard non-astrology requests)
+    off_topic_keywords = ["write code", "debug", "programming", "recipe", "weather forecast", "sports score", "news today"]
+    if any(k in text for k in off_topic_keywords):
+        return {**state, "intent": "off_topic", "step_count": state.get("step_count", 0)}
 
-    return {**state, "intent": intent, "step_count": state.get("step_count", 0)}
+    # Daily energy / transits
+    daily_keywords = ["today", "daily", "energy today", "transits", "current planets", "this week", "tonight"]
+    if any(k in text for k in daily_keywords):
+        return {**state, "intent": "daily_horoscope", "step_count": state.get("step_count", 0)}
+
+    # Chart request
+    chart_keywords = ["natal chart", "birth chart", "compute", "calculate", "my chart", "ascendant", "rising sign",
+                      "yes", "yes please", "sure", "go ahead", "ok", "okay", "please do", "proceed"]
+    if any(k in text for k in chart_keywords):
+        return {**state, "intent": "chart_request", "step_count": state.get("step_count", 0)}
+
+    # Everything else is a free question (love, career, relationships, planets, signs, etc.)
+    return {**state, "intent": "free_question", "step_count": state.get("step_count", 0)}
 
 
 def guardrail_node(state: AstroState) -> AstroState:
@@ -172,12 +193,12 @@ def reason_node(state: AstroState) -> AstroState:
     # Strip any leaked intent label the model may prepend (e.g. "chart_request\n...")
     INTENT_LABELS = {"chart_request", "daily_horoscope", "free_question", "off_topic", "sensitive"}
     if isinstance(response.content, str):
-        content = response.content
+        content = response.content.strip()
         for label in INTENT_LABELS:
+            # Match label at start, with or without punctuation/newline after
             if content.lower().startswith(label):
-                content = content[len(label):].lstrip("\n :–-")
+                content = content[len(label):].lstrip("\n\r :–-_")
                 break
-        # Rebuild response with cleaned content
         response = response.model_copy(update={"content": content})
 
     new_messages = list(messages) + [response]
